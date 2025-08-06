@@ -1,0 +1,106 @@
+From 806dd2a41679ad4eb7e36297684f7d8c1b670e79 Mon Sep 17 00:00:00 2001
+From: Vlad Dyshakov <kawaii.nekotech@gmail.com>
+Date: Wed, 6 Aug 2025 23:56:17 +0700
+Subject: [PATCH 1/1] Reverted "steamcompmgr: Relative mouse fixes and
+ improvements"
+
+Reverted 69610ec52429fecbe94c4c042cc42ab43e0491f8
+---
+ src/steamcompmgr.cpp | 17 +++--------------
+ src/steamcompmgr.hpp |  3 ---
+ src/wlserver.cpp     |  9 +++------
+ 3 files changed, 6 insertions(+), 23 deletions(-)
+
+diff --git a/src/steamcompmgr.cpp b/src/steamcompmgr.cpp
+index e7b2397..5bd5109 100644
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -1546,19 +1546,8 @@ MouseCursor::MouseCursor(xwayland_ctx_t *ctx)
+ void MouseCursor::UpdatePosition()
+ {
+ 	wlserver_lock();
+-	struct wlr_pointer_constraint_v1 *pConstraint = wlserver.GetCursorConstraint();
+-	if ( pConstraint && pConstraint->current.cursor_hint.enabled )
+-	{
+-		m_x = pConstraint->current.cursor_hint.x;
+-		m_y = pConstraint->current.cursor_hint.y;
+-		m_bConstrained = true;
+-	}
+-	else
+-	{
+-		m_x = wlserver.mouse_surface_cursorx;
+-		m_y = wlserver.mouse_surface_cursory;
+-		m_bConstrained = false;
+-	}
++	m_x = wlserver.mouse_surface_cursorx;
++	m_y = wlserver.mouse_surface_cursory;
+ 	wlserver_unlock();
+ }
+ 
+@@ -8452,7 +8441,7 @@ steamcompmgr_main(int argc, char **argv)
+ 					( pPaintFocus->cursor && pPaintFocus->cursor->imageEmpty() ) &&
+ 					( !window_is_steam( pPaintFocus->inputFocusWindow ) );
+ 
+-				const bool bHasPointerConstraint = pPaintFocus->cursor && pPaintFocus->cursor->IsConstrained();
++				const bool bHasPointerConstraint = wlserver.HasMouseConstraint(); // atomic, no lock needed
+ 
+ 				uint32_t uAppId = pPaintFocus->inputFocusWindow
+ 					? pPaintFocus->inputFocusWindow->appID
+diff --git a/src/steamcompmgr.hpp b/src/steamcompmgr.hpp
+index 98e9272..fd4e7a9 100644
+--- a/src/steamcompmgr.hpp
++++ b/src/steamcompmgr.hpp
+@@ -95,8 +95,6 @@ public:
+ 	void GetDesiredSize( int& nWidth, int &nHeight );
+ 
+ 	void checkSuspension();
+-
+-	bool IsConstrained() const { return m_bConstrained; }
+ private:
+ 
+ 	bool getTexture();
+@@ -104,7 +102,6 @@ private:
+ 	void updateCursorFeedback( bool bForce = false );
+ 
+ 	int m_x = 0, m_y = 0;
+-	bool m_bConstrained = false;
+ 	int m_hotspotX = 0, m_hotspotY = 0;
+ 
+ 	gamescope::OwningRc<CVulkanTexture> m_texture;
+diff --git a/src/wlserver.cpp b/src/wlserver.cpp
+index 4d8546e..766d6ab 100644
+--- a/src/wlserver.cpp
++++ b/src/wlserver.cpp
+@@ -2450,9 +2450,7 @@ static void wlserver_warp_to_constraint_hint()
+ 		if ( wlserver.mouse_surface_cursorx == sx && wlserver.mouse_surface_cursory == sy )
+ 			return;
+ 
+-		wlserver.mouse_surface_cursorx = sx;
+-		wlserver.mouse_surface_cursory = sy;
+-		wlr_seat_pointer_warp( wlserver.wlr.seat, sx, sy );
++		wlserver_mousewarp( sx, sy, 0, true );
+ 
+ 		uint64_t ulNow = get_time_in_nanos();
+ 		static uint32_t s_unSyntheticMoveCount = 0;
+@@ -2488,8 +2486,6 @@ static void wlserver_update_cursor_constraint()
+ 	{
+ 		wlserver.mouse_constraint_requires_warp = false;
+ 
+-		wlserver_warp_to_constraint_hint();
+-
+ 		if (!pixman_region32_contains_point(pRegion, floor(wlserver.mouse_surface_cursorx), floor(wlserver.mouse_surface_cursory), NULL))
+ 		{
+ 			int nboxes;
+@@ -2499,7 +2495,8 @@ static void wlserver_update_cursor_constraint()
+ 				wlserver.mouse_surface_cursorx = std::clamp<double>( wlserver.mouse_surface_cursorx, boxes[0].x1, boxes[0].x2);
+ 				wlserver.mouse_surface_cursory = std::clamp<double>( wlserver.mouse_surface_cursory, boxes[0].y1, boxes[0].y2);
+ 
+-				wlr_seat_pointer_warp( wlserver.wlr.seat, wlserver.mouse_surface_cursorx, wlserver.mouse_surface_cursory );
++				wlr_seat_pointer_notify_motion( wlserver.wlr.seat, 0, wlserver.mouse_surface_cursorx, wlserver.mouse_surface_cursory );
++				wlr_seat_pointer_notify_frame( wlserver.wlr.seat );
+ 			}
+ 		}
+ 	}
+-- 
+2.49.1
+
